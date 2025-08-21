@@ -1,32 +1,32 @@
-import html
 import logging
 import sys
+from io import BytesIO
 
 import streamlit as st
-from extract import extract
+from extractor import extract
 
-logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
+from pdfextractor.logger import app_logger
+from pdfextractor.renderer import render_html_table
+
+logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
 
-def render_html_table(field_to_value: dict[str, str]) -> str:
-    rows = []
-    for field_label, value in field_to_value.items():
-        rows.append(
-            f"<tr><td style='padding:8px;border:1px solid #ddd;font-weight:600'>{html.escape(field_label)}</td><td style='padding:8px;border:1px solid #ddd'>{html.escape(value)}</td></tr>"
-        )
-    table = "".join(
-        [
-            "<table style='border-collapse:collapse;width:100%;max-width:720px'>",
-            "<thead><tr>",
-            "<th style='text-align:left;padding:8px;border:1px solid #ddd'>Field</th>",
-            "<th style='text-align:left;padding:8px;border:1px solid #ddd'>Value</th>",
-            "</tr></thead>",
-            "<tbody>",
-            "".join(rows),
-            "</tbody></table>",
-        ]
-    )
-    return table
+def try_extraction(file: BytesIO, fields: list[str]) -> dict[str, str] | None:
+    try:
+        return extract(file, fields)
+    except Exception as e:
+        app_logger.exception("Error while extracting fields")
+        st.error(f"Error while extracting fields: {e}")
+        st.stop()
+
+
+def try_rendering(field_to_value: dict[str, str]) -> str | None:
+    try:
+        return render_html_table(field_to_value)
+    except Exception as e:
+        app_logger.exception("Error while rendering")
+        st.error(f"Error while rendering: {e}")
+        st.stop()
 
 
 st.set_page_config(page_title="PDF Extractor", layout="centered")
@@ -49,16 +49,17 @@ if extract_clicked:
         st.warning("Please select at least one field.")
         st.stop()
 
-    progress_placeholder = st.empty()
     label_placeholder = st.empty()
-    progress_bar = progress_placeholder.progress(0)
     label_placeholder.write("processing")
+    progress_placeholder = st.empty()
+    progress_bar = progress_placeholder.progress(0)
+
     progress_bar.progress(50)
+    extracted_fields = try_extraction(uploaded_file, selected_fields)
 
-    extracted_fields = extract(uploaded_file, selected_fields)
-
+    progress_bar.progress(100)
     progress_placeholder.empty()
     label_placeholder.empty()
-
-    html_table = render_html_table(extracted_fields)
+    html_table = try_rendering(extracted_fields)
+    st.header("Result")
     st.html(html_table)

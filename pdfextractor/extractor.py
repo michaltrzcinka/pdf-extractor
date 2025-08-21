@@ -5,6 +5,8 @@ import pymupdf
 import pymupdf4llm
 from openai import OpenAI
 
+from pdfextractor.logger import app_logger
+
 client = OpenAI(
     base_url="http://localhost:11434/v1",  # Local Ollama API
     api_key="ollama",  # Dummy key
@@ -15,7 +17,6 @@ def extract(file: BytesIO, fields: list[str]) -> dict[str, str]:
     doc = pymupdf.open(stream=file.getvalue(), filetype="pdf")
     md_text = pymupdf4llm.to_markdown(doc)
     extracted_fields_str = call_llm(md_text, fields)
-    print("extracted_fields_str", extracted_fields_str)
     extracted_fields = json.loads(extracted_fields_str)
     return extracted_fields
 
@@ -41,7 +42,7 @@ def call_llm(document: str, fields: list[str]) -> str:
     Make sure to return just the JSON, nothing else (no "```json" or "```").
     """
 
-    print("prompt", prompt)
+    app_logger.info("prompt", prompt)
 
     response = client.chat.completions.create(
         model="gpt-oss:20b",
@@ -50,4 +51,6 @@ def call_llm(document: str, fields: list[str]) -> str:
             {"role": "user", "content": prompt},
         ],
     )
-    return response.choices[0].message.content
+    result = response.choices[0].message.content
+    app_logger.info("result", result)
+    return result
