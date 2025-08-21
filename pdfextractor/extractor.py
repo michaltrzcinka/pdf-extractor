@@ -13,19 +13,11 @@ client = OpenAI(
 )
 
 
-def extract(file: BytesIO, fields: list[str]) -> dict[str, str]:
-    doc = pymupdf.open(stream=file.getvalue(), filetype="pdf")
-    md_text = pymupdf4llm.to_markdown(doc)
-    extracted_fields_str = call_llm(md_text, fields)
-    extracted_fields = json.loads(extracted_fields_str)
-    return extracted_fields
-
-
-def call_llm(document: str, fields: list[str]) -> str:
+def _build_prompt(document: str, fields: list[str]) -> str:
     field_names = ", ".join(fields)
     output_example = json.dumps({field: "Value" for field in fields})
 
-    prompt = f"""
+    return f"""
     You are a helpful assistant that extracts fields from a markdown document.
     Here is the markdown document:
 
@@ -42,15 +34,29 @@ def call_llm(document: str, fields: list[str]) -> str:
     Make sure to return just the JSON, nothing else (no "```json" or "```").
     """
 
+
+def _call_llm(document: str, fields: list[str]) -> str:
+    prompt = _build_prompt(document, fields)
     app_logger.info("prompt", prompt)
 
-    response = client.chat.completions.create(
-        model="gpt-oss:20b",
-        messages=[
-            {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": prompt},
-        ],
+    response = (
+        client.chat.completions.create(
+            model="gpt-oss:20b",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": prompt},
+            ],
+        )
+        .choices[0]
+        .message.content
     )
-    result = response.choices[0].message.content
-    app_logger.info("result", result)
-    return result
+    app_logger.info("response", response)
+    return response
+
+
+def extract(file: BytesIO, fields: list[str]) -> dict[str, str]:
+    doc = pymupdf.open(stream=file.getvalue(), filetype="pdf")
+    markdown_text = pymupdf4llm.to_markdown(doc)
+    extracted_fields_str = _call_llm(markdown_text, fields)
+    extracted_fields = json.loads(extracted_fields_str)
+    return extracted_fields
